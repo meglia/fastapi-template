@@ -3,7 +3,7 @@
 import logging
 import shutil
 import tomllib
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -47,16 +47,16 @@ def _list_projects() -> list[dict]:
         if not entry.is_dir():
             continue
         config = _read_config_toml(entry)
-        if config is None or "created_date" not in config:
+        if config is None or "created_time" not in config:
             continue
         try:
-            created_date = date.fromisoformat(config["created_date"])
+            created_time = datetime.fromisoformat(config["created_time"])
         except (ValueError, TypeError):
-            created_date = None
+            created_time = None
         projects.append({
             "name": entry.name,
             "description": config.get("description", ""),
-            "created_date": created_date,
+            "created_time": created_time,
             "path": str(entry.absolute()),
         })
     return projects
@@ -80,9 +80,9 @@ async def create_project(body: ProjectCreate):
         raise HTTPException(status_code=409, detail=f"工程 '{body.name}' 已存在")
 
     project_path.mkdir(parents=True)
-    today = date.today().isoformat()
+    now = datetime.now().isoformat(sep=" ", timespec="seconds")
     toml_content = f"""# 工程配置文件
-created_date = "{today}"
+created_time = "{now}"
 description = "{body.description}"
 """
     (project_path / "config.toml").write_text(toml_content, encoding="utf-8")
@@ -91,7 +91,7 @@ description = "{body.description}"
     return ProjectResponse(
         name=body.name,
         description=body.description,
-        created_date=date.today(),
+        created_time=datetime.now(),
         path=str(project_path.absolute()),
     )
 
@@ -112,23 +112,23 @@ async def rename_project(project_name: str, body: ProjectRename):
     src.rename(dst)
     # 更新 config.toml 确保一致性（created_date 保留）
     config = _read_config_toml(dst) or {}
-    created_date = config.get("created_date", date.today().isoformat())
+    created_time = config.get("created_time", datetime.now().isoformat(sep=" ", timespec="seconds"))
     description = config.get("description", "")
     toml_content = f"""# 工程配置文件
-created_date = "{created_date}"
+created_time = "{created_time}"
 description = "{description}"
 """
     (dst / "config.toml").write_text(toml_content, encoding="utf-8")
     logger.info("重命名工程: %s → %s", project_name, body.new_name)
 
     try:
-        cd = date.fromisoformat(created_date)
+        ct = datetime.fromisoformat(created_time)
     except (ValueError, TypeError):
-        cd = None
+        ct = None
     return ProjectResponse(
         name=body.new_name,
         description=description,
-        created_date=cd,
+        created_time=ct,
         path=str(dst.absolute()),
     )
 
@@ -145,22 +145,22 @@ async def update_project(project_name: str, body: ProjectUpdate):
     if config is None:
         raise HTTPException(status_code=400, detail="config.toml 不可读")
 
-    created_date = config.get("created_date", date.today().isoformat())
+    created_time = config.get("created_time", datetime.now().isoformat(sep=" ", timespec="seconds"))
     toml_content = f"""# 工程配置文件
-created_date = "{created_date}"
+created_time = "{created_time}"
 description = "{body.description}"
 """
     (project_path / "config.toml").write_text(toml_content, encoding="utf-8")
     logger.info("更新工程描述: %s", project_name)
 
     try:
-        cd = date.fromisoformat(created_date)
+        ct = datetime.fromisoformat(created_time)
     except (ValueError, TypeError):
-        cd = None
+        ct = None
     return ProjectResponse(
         name=project_name,
         description=body.description,
-        created_date=cd,
+        created_time=ct,
         path=str(project_path.absolute()),
     )
 

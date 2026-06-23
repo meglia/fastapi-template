@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 启动进程管理器
-    logger.info("所有私有协议已启动")
+    logger.info("所有子进程已启动")
 
     yield
 
     # 关闭
-    logger.info("所有私有协议已停止")
+    logger.info("所有子进程已停止")
 
 
 app = FastAPI(

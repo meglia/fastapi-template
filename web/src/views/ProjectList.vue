@@ -61,7 +61,7 @@
               {{ project.description || '暂无描述' }}
             </p>
             <div class="text-gray-400 text-xs mt-2">
-              创建日期：{{ project.created_date || '未知' }}
+              创建时间：{{ project.created_time ? formatTime(project.created_time) : '未知' }}
             </div>
           </el-card>
         </el-col>
@@ -239,6 +239,14 @@ async function fetchProjects() {
 onMounted(() => {
   fetchProjects()
 })
+
+function formatTime(isoStr) {
+  if (!isoStr) return ''
+  const d = new Date(isoStr)
+  if (isNaN(d.getTime())) return isoStr
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 </script>
 
 <style scoped>

@@ -1,6 +1,6 @@
 """工程数据模型 — Pydantic 校验与序列化。"""
 
-from datetime import date
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 
@@ -24,5 +24,5 @@ class ProjectResponse(BaseModel):
     """工程列表响应体。"""
     name: str
     description: str
-    created_date: date | None = None
+    created_time: datetime | None = None
     path: str
