@@ -3,6 +3,7 @@
 import json
 import logging
 import shutil
+import tomllib
 from pathlib import Path
 
 import pandas as pd
@@ -25,8 +26,7 @@ router = APIRouter()
 
 # ── 常量 ──────────────────────────────────────────────────
 TEMP_FILE_PREFIX = ".temp_acceptance_upload"
-TEMP_META_FILE = ".temp_acceptance_meta.json"
-FINAL_META_FILE = ".acceptance_meta.json"
+TEMP_ORIGINAL_NAME_FILE = ".temp_original_name.txt"
 DATA_FILE_NAME = "acceptance_data.json"
 
 
@@ -96,18 +96,44 @@ def _load_existing_data(project_path: Path) -> dict[str, AcceptanceRow]:
 
 
 def _cleanup_old_temp(project_path: Path):
-    """清理工程目录下所有旧临时文件及元数据。"""
+    """清理工程目录下所有旧临时文件。"""
     for p in project_path.glob(f"{TEMP_FILE_PREFIX}*"):
         try:
             p.unlink()
         except Exception:
             pass
-    meta_path = project_path / TEMP_META_FILE
-    if meta_path.is_file():
+    name_file = project_path / TEMP_ORIGINAL_NAME_FILE
+    if name_file.is_file():
         try:
-            meta_path.unlink()
+            name_file.unlink()
         except Exception:
             pass
+
+
+def _write_config_toml(project_path: Path, *, file_name: str | None = None):
+    """将文件名写入 config.toml（保留已有 created_time / description 字段）。"""
+    config_path = project_path / "config.toml"
+    config = {}
+    if config_path.is_file():
+        try:
+            with open(config_path, "rb") as f:
+                config = tomllib.load(f)
+        except Exception:
+            pass
+
+    created_time = config.get("created_time", "")
+    description = config.get("description", "")
+    # 若未传入 file_name，保留已有值
+    fn = file_name if file_name is not None else config.get("file_name", "")
+
+    lines = [
+        "# 工程配置文件",
+        f'created_time = "{created_time}"',
+        f'description = "{description}"',
+    ]
+    if fn:
+        lines.append(f'file_name = "{fn}"')
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 # ── API 端点 ──────────────────────────────────────────────
@@ -131,8 +157,7 @@ async def upload_acceptance(project_name: str, file: UploadFile = File(...)):
     temp_path.write_bytes(content)
 
     # 记录原始文件名，供保存时使用
-    meta_path = project_path / TEMP_META_FILE
-    meta_path.write_text(json.dumps({"original_name": original_name}, ensure_ascii=False), encoding="utf-8")
+    (project_path / TEMP_ORIGINAL_NAME_FILE).write_text(original_name, encoding="utf-8")
 
     try:
         workbooks = _read_excel_workbooks(temp_path)
@@ -199,13 +224,12 @@ async def save_acceptance(project_name: str, body: SaveRequest):
         logger.error("保存验收表时解析失败: %s", e)
         raise HTTPException(status_code=400, detail=f"解析失败: {e}")
 
-    # 读取上传时记录的文件名
-    temp_meta_path = project_path / TEMP_META_FILE
+    # 读取上传时记录的原始文件名
+    original_name_file = project_path / TEMP_ORIGINAL_NAME_FILE
     original_name = temp_ext  # fallback
-    if temp_meta_path.is_file():
+    if original_name_file.is_file():
         try:
-            meta = json.loads(temp_meta_path.read_text(encoding="utf-8"))
-            original_name = meta.get("original_name", temp_ext)
+            original_name = original_name_file.read_text(encoding="utf-8").strip() or temp_ext
         except Exception:
             pass
 
@@ -223,14 +247,13 @@ async def save_acceptance(project_name: str, body: SaveRequest):
     final_path = project_path / final_name
     shutil.move(str(temp_path), str(final_path))
 
-    # 写入最终文件元数据
-    final_meta_path = project_path / FINAL_META_FILE
-    final_meta_path.write_text(json.dumps({"file_name": final_name}, ensure_ascii=False), encoding="utf-8")
+    # 同步更新 config.toml 中的文件名
+    _write_config_toml(project_path, file_name=final_name)
 
-    # 清理临时元数据
-    if temp_meta_path.is_file():
+    # 清理临时原始文件名记录
+    if original_name_file.is_file():
         try:
-            temp_meta_path.unlink()
+            original_name_file.unlink()
         except Exception:
             pass
 
@@ -259,16 +282,16 @@ async def get_acceptance(project_name: str):
 
     try:
         data = json.loads(data_path.read_text(encoding="utf-8"))
-        # 从元数据文件读取实际保存的文件名
+        # 从 config.toml 读取文件名，回退到文件系统搜索
         file_name = None
-        final_meta_path = project_path / FINAL_META_FILE
-        if final_meta_path.is_file():
-            try:
-                meta = json.loads(final_meta_path.read_text(encoding="utf-8"))
-                file_name = meta.get("file_name")
-            except Exception:
-                pass
-        # 回退：搜索非临时 Excel 文件
+        try:
+            config_path = project_path / "config.toml"
+            if config_path.is_file():
+                with open(config_path, "rb") as f:
+                    config = tomllib.load(f)
+                file_name = config.get("file_name")
+        except Exception:
+            pass
         if file_name is None:
             for ext in (".xlsx", ".xls"):
                 for f in project_path.glob(f"*.{ext[1:]}"):

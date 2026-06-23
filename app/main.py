@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api.router import router as api_router
 from app.core.config import settings
+from app.protocols.manager import protocol_manager
 
 
 logging.basicConfig(level=logging.INFO)
@@ -15,13 +16,17 @@ logger = logging.getLogger(__name__)
 # ── lifespan: 统一管理 HTTP 服务与私有协议生命周期 ──
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动进程管理器
-    logger.info("所有子进程已启动")
+    # 启动协议管理子进程
+    logger.info("正在启动协议管理器...")
+    protocol_manager.start()
+    logger.info("协议管理器已启动")
 
     yield
 
-    # 关闭
-    logger.info("所有子进程已停止")
+    # 关闭协议管理子进程
+    logger.info("正在停止协议管理器...")
+    protocol_manager.stop()
+    logger.info("协议管理器已停止")
 
 
 app = FastAPI(

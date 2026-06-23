@@ -33,6 +33,29 @@ def _read_config_toml(project_path: Path) -> dict | None:
         return None
 
 
+def _write_config_toml(
+    project_path: Path,
+    *,
+    created_time: str | None = None,
+    description: str | None = None,
+    file_name: str | None = None,
+):
+    """写入 config.toml，仅更新传入的非 None 字段，其余字段从已有配置保留。"""
+    existing = _read_config_toml(project_path) or {}
+    ct = created_time if created_time is not None else existing.get("created_time", "")
+    desc = description if description is not None else existing.get("description", "")
+    fn = file_name if file_name is not None else existing.get("file_name", "")
+
+    lines = [
+        "# 工程配置文件",
+        f'created_time = "{ct}"',
+        f'description = "{desc}"',
+    ]
+    if fn:
+        lines.append(f'file_name = "{fn}"')
+    (project_path / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _ensure_projects_dir() -> Path:
     """确保 projects 根目录存在。"""
     settings.PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -81,11 +104,7 @@ async def create_project(body: ProjectCreate):
 
     project_path.mkdir(parents=True)
     now = datetime.now().isoformat(sep=" ", timespec="seconds")
-    toml_content = f"""# 工程配置文件
-created_time = "{now}"
-description = "{body.description}"
-"""
-    (project_path / "config.toml").write_text(toml_content, encoding="utf-8")
+    _write_config_toml(project_path, created_time=now, description=body.description)
     logger.info("创建工程: %s", body.name)
 
     return ProjectResponse(
@@ -110,15 +129,11 @@ async def rename_project(project_name: str, body: ProjectRename):
 
     # 重命名目录
     src.rename(dst)
-    # 更新 config.toml 确保一致性（created_date 保留）
+    # 更新 config.toml 确保一致性（保留已有字段）
     config = _read_config_toml(dst) or {}
     created_time = config.get("created_time", datetime.now().isoformat(sep=" ", timespec="seconds"))
     description = config.get("description", "")
-    toml_content = f"""# 工程配置文件
-created_time = "{created_time}"
-description = "{description}"
-"""
-    (dst / "config.toml").write_text(toml_content, encoding="utf-8")
+    _write_config_toml(dst)
     logger.info("重命名工程: %s → %s", project_name, body.new_name)
 
     try:
@@ -146,11 +161,7 @@ async def update_project(project_name: str, body: ProjectUpdate):
         raise HTTPException(status_code=400, detail="config.toml 不可读")
 
     created_time = config.get("created_time", datetime.now().isoformat(sep=" ", timespec="seconds"))
-    toml_content = f"""# 工程配置文件
-created_time = "{created_time}"
-description = "{body.description}"
-"""
-    (project_path / "config.toml").write_text(toml_content, encoding="utf-8")
+    _write_config_toml(project_path, description=body.description)
     logger.info("更新工程描述: %s", project_name)
 
     try:

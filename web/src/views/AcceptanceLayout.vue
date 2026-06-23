@@ -23,7 +23,7 @@
         <RemoteAcceptancePanel :project-name="projectName" />
       </div>
 
-      <!-- 右侧：视频画面 + 报文日志 -->
+      <!-- 右侧：视频画面 + 通讯管理 -->
       <transition name="slide-fade">
         <div v-if="!collapsed" class="min-w-0 flex flex-col gap-4 min-h-0" style="flex: 1;">
           <VideoConnection />
