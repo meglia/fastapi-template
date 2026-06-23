@@ -8,5 +8,8 @@ dependencies = [
     "fastapi[all]>=0.138.0",
     "numpy>=2.5.0",
     "opencv-python>=4.13.0.92",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.3",
     "pydantic-settings<3.0.0",
+    "xlrd>=2.0.2",
 ]

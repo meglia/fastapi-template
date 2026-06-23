@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     DEBUG: bool = True
 
+    # ── 工程目录 ──────────────────────────
+    PROJECTS_DIR: Path = Path(__file__).resolve().parent.parent.parent / "projects"
 
     model_config = {
         "env_file": ".env",
