@@ -2,8 +2,8 @@
   <div class="project-page min-h-screen bg-gray-100">
     <!-- 顶部标题栏 -->
     <header class="bg-white shadow-sm px-6 py-5">
-      <h1 class="text-2xl font-bold text-gray-800">📋 工程管理</h1>
-      <p class="text-gray-500 mt-1 text-sm">新老电力接线图遥控识别比对程序</p>
+      <h1 class="text-2xl font-bold text-gray-800">工程列表</h1>
+      <p class="text-gray-500 mt-1 text-sm">监控后台·遥控画面验收</p>
     </header>
 
     <!-- 操作栏 -->

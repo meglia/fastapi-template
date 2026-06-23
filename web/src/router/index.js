@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import ProjectList from '@/views/ProjectList.vue'
-import AcceptanceDetail from '@/views/AcceptanceDetail.vue'
+import AcceptanceLayout from '@/views/AcceptanceLayout.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -13,7 +13,7 @@ const router = createRouter({
     {
       path: '/acceptance/:name',
       name: 'acceptance',
-      component: AcceptanceDetail,
+      component: AcceptanceLayout,
     },
   ],
 })
