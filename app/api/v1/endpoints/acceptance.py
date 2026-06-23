@@ -1,13 +1,16 @@
 """验收表管理 API — 上传/预览/保存验收表 Excel 文件。"""
 
+import hashlib
 import json
 import logging
 import shutil
+import time as time_module
 import tomllib
 from pathlib import Path
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import Response
 
 from app.core.config import settings
 from app.models.acceptance import (
@@ -15,6 +18,8 @@ from app.models.acceptance import (
     AcceptanceRow,
     PreviewRequest,
     PreviewResponse,
+    RecordRemoteRequest,
+    RecordRemoteResponse,
     SaveRequest,
     SaveResponse,
     UploadResponse,
@@ -308,3 +313,177 @@ async def get_acceptance(project_name: str):
     except Exception as e:
         logger.error("读取验收表数据失败: %s", e)
         return AcceptanceData(exists=False)
+
+
+# ── 遥控验收记录 ──────────────────────────────────────────
+
+
+def _serialize_signal(signal: dict) -> str:
+    """将遥控信号字典序列化为可读文本，写入验收表遥控对象列。"""
+    desc = signal.get("description", "")
+    path = signal.get("path", "")
+    state_label = signal.get("state_label", "")
+    state = signal.get("state")
+    ts_str = signal.get("signal_ts_str", "")
+    parts = [
+        f"desc={desc}",
+        f"path={path}",
+        f"state={state_label}",
+    ]
+    if state is not None:
+        parts.append(f"state_raw=0x{state:02X}")
+    if ts_str:
+        parts.append(f"ts={ts_str}")
+    return " | ".join(parts)
+
+
+def _save_screenshot(project_path: Path, frame) -> str:
+    """在原始帧左下角打时标，编码为 JPEG 并保存到 screenshots/ 目录，返回文件名。
+
+    frame: numpy ndarray (BGR)，来自 VideoService.get_raw_frame()
+    """
+    import cv2
+    import datetime
+
+    screenshots_dir = project_path / "screenshots"
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+    # 打时标 — 左下角白色文字 + 黑色半透明背景条
+    now = datetime.datetime.now()
+    ts_text = now.strftime("%Y-%m-%d %H:%M:%S.") + f"{now.microsecond // 1000:03d}"
+    h, w = frame.shape[:2]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.6, w / 1280.0)
+    thickness = max(1, int(w / 640))
+    (tw, th), baseline = cv2.getTextSize(ts_text, font, font_scale, thickness)
+    # 背景条
+    margin = 8
+    bar_y1 = h - th - baseline - margin * 2
+    bar_y2 = h - margin
+    bar_x1 = margin
+    bar_x2 = margin + tw + margin * 2
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (bar_x1, bar_y1), (bar_x2, bar_y2), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+    # 白色文字
+    text_x = margin + margin
+    text_y = h - margin - baseline
+    cv2.putText(frame, ts_text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+    # 编码为 JPEG
+    success, jpeg = cv2.imencode('.jpg', frame)
+    if not success:
+        raise RuntimeError("JPEG 编码失败")
+    jpeg_bytes = jpeg.tobytes()
+
+    file_hash = hashlib.sha256(jpeg_bytes).hexdigest()[:16]
+    ts_int = int(time_module.time() * 1000)
+    filename = f"{file_hash}_{ts_int}.jpg"
+    filepath = screenshots_dir / filename
+    filepath.write_bytes(jpeg_bytes)
+    logger.info("截图已保存(含时标): %s (%d bytes)", filename, len(jpeg_bytes))
+    return filename
+
+
+@router.post("/{project_name}/acceptance/record-remote", response_model=RecordRemoteResponse)
+async def record_remote_acceptance(project_name: str, body: RecordRemoteRequest):
+    """收到遥控报文时记录验收数据。
+
+    根据 backend_type (old/new) 决定写入老后台还是新后台列；
+    同时截取当前视频画面保存为截图；
+    row_indices 指定勾选行，为 None 时自动找第一个空行填充。
+    """
+    project_path = _get_project_path(project_name)
+
+    # 校验 backend_type
+    if body.backend_type not in ("old", "new"):
+        raise HTTPException(status_code=400, detail="backend_type 必须为 old 或 new")
+
+    # 读取已有验收数据
+    data_path = project_path / DATA_FILE_NAME
+    if not data_path.is_file():
+        raise HTTPException(status_code=400, detail="请先导入并保存验收表")
+
+    try:
+        items_raw = json.loads(data_path.read_text(encoding="utf-8"))
+        rows = [AcceptanceRow(**item) for item in items_raw]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取验收数据失败: {e}")
+
+    # 截图
+    screenshot_filename = ""
+    try:
+        from app.services.video_service import get_video_service
+        vs = get_video_service()
+        raw_frame = vs.get_raw_frame()
+        if raw_frame is not None:
+            screenshot_filename = _save_screenshot(project_path, raw_frame)
+        else:
+            logger.warning("[遥控验收] 视频服务无帧可截")
+    except Exception as e:
+        logger.warning("[遥控验收] 截图失败: %s", e)
+
+    # 序列化信号文本
+    signal_text = _serialize_signal(body.signal)
+
+    # 确定需要填充的行索引
+    is_old = body.backend_type == "old"
+    obj_field = "old_backend_object" if is_old else "new_backend_object"
+    ss_field = "old_backend_screenshot" if is_old else "new_backend_screenshot"
+
+    filled_indices: list[int] = []
+
+    if body.row_indices is not None and len(body.row_indices) > 0:
+        # 填充勾选行
+        for idx in body.row_indices:
+            if 0 <= idx < len(rows):
+                setattr(rows[idx], obj_field, signal_text)
+                if screenshot_filename:
+                    setattr(rows[idx], ss_field, screenshot_filename)
+                filled_indices.append(idx)
+    else:
+        # 自动找第一个空行
+        for idx, row in enumerate(rows):
+            current_val = getattr(row, obj_field, "")
+            if not current_val:
+                setattr(row, obj_field, signal_text)
+                if screenshot_filename:
+                    setattr(row, ss_field, screenshot_filename)
+                filled_indices.append(idx)
+                break
+
+    if not filled_indices:
+        raise HTTPException(status_code=400, detail=f"{'老后台' if is_old else '新后台'}遥控对象列已全部填满，无可填充的空行")
+
+    # 写回 JSON
+    data_json = [r.model_dump() for r in rows]
+    data_path.write_text(json.dumps(data_json, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    log_msg = (
+        f"[遥控验收] 后台={'老' if is_old else '新'} "
+        f"信号={signal_text[:80]} "
+        f"截图={screenshot_filename or '无'} "
+        f"填充行={filled_indices}"
+    )
+    logger.info(log_msg)
+
+    return RecordRemoteResponse(rows=rows, filled_indices=filled_indices)
+
+
+@router.get("/{project_name}/acceptance/screenshot/{filename}")
+async def get_screenshot(project_name: str, filename: str):
+    """获取验收截图文件。"""
+    project_path = _get_project_path(project_name)
+    file_path = project_path / "screenshots" / filename
+
+    # 安全检查：防止路径穿越
+    resolved = file_path.resolve()
+    allowed_base = (project_path / "screenshots").resolve()
+    if not str(resolved).startswith(str(allowed_base)):
+        raise HTTPException(status_code=403, detail="禁止访问")
+
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="截图文件不存在")
+
+    content = resolved.read_bytes()
+    return Response(content=content, media_type="image/jpeg")

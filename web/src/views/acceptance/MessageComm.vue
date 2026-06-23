@@ -109,6 +109,8 @@ import { ElMessage } from 'element-plus'
 import { Setting, Link, Close, Delete } from '@element-plus/icons-vue'
 import { connectDevice, disconnectDevice, getStatus, getMessages, setRemoteOnly, clearMessages as clearBackendMessages } from '@/api/communication'
 
+const emit = defineEmits(['remote-signal'])
+
 // ── 配置表单 ──
 const configForm = ref({
   host: '192.168.86.166',   // 默认 R4
@@ -284,6 +286,14 @@ async function pollMessages() {
       for (const m of newMsgs) {
         if (m.direction === 'send') sentCount.value++
         else if (m.direction === 'recv') recvCount.value++
+
+        // 遥控报文 (0xFB) 且有解析信号时，通知验收面板
+        if (m.extra?.asdu_type === 0xFB && m.extra?.signal) {
+          emit('remote-signal', {
+            signal: m.extra.signal,
+            timestamp: m.timestamp,
+          })
+        }
       }
 
       if (messages.value.length > 1000) {

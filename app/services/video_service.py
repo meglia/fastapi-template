@@ -168,6 +168,16 @@ class VideoService:
 
     # ── 帧获取 ────────────────────────────────────────
 
+    def get_raw_frame(self):
+        """获取最新帧的原始 numpy 数组（BGR），无帧时返回 None。
+
+        返回原始数组而非 JPEG 字节，便于调用方在编码前做图像处理（如打时标）。
+        """
+        with self._frame_lock:
+            if self._latest_frame is None:
+                return None
+            return self._latest_frame.copy()
+
     def get_frame(self) -> bytes | None:
         """获取最新帧的 JPEG 编码字节，无帧时返回 None。"""
         with self._frame_lock:

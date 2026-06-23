@@ -59,6 +59,19 @@ class SaveResponse(BaseModel):
     total_count: int
 
 
+class RecordRemoteRequest(BaseModel):
+    """遥控验收记录请求 — 收到遥控报文时调用的端点入参。"""
+    backend_type: str = Field(..., description="old 或 new，决定写入老后台还是新后台列")
+    signal: dict = Field(..., description="解析后的遥控信号对象（来自协议层 _parse_signal）")
+    row_indices: list[int] | None = Field(None, description="勾选的行索引列表，null 则自动找第一个空行")
+
+
+class RecordRemoteResponse(BaseModel):
+    """遥控验收记录响应 — 返回更新后的完整行数据。"""
+    rows: list[AcceptanceRow]
+    filled_indices: list[int] = Field(default_factory=list, description="本次填充的行索引")
+
+
 class AcceptanceData(BaseModel):
     """获取已保存验收表数据的响应。"""
     exists: bool = False

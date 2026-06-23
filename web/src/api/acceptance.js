@@ -48,3 +48,24 @@ export function saveAcceptance(projectName, data) {
 export function getAcceptance(projectName) {
   return request.get(`${BASE}/${encodeURIComponent(projectName)}/acceptance`)
 }
+
+/**
+ * 遥控验收记录 — 收到遥控报文时调用的端点
+ * @param {string} projectName - 工程名称
+ * @param {{ backend_type: 'old'|'new', signal: object, row_indices: number[]|null }} data
+ * @returns {Promise<{ rows: Array, filled_indices: number[] }>}
+ */
+export function recordRemoteAcceptance(projectName, data) {
+  return request.post(`${BASE}/${encodeURIComponent(projectName)}/acceptance/record-remote`, data)
+}
+
+/**
+ * 获取截图 URL
+ * @param {string} projectName - 工程名称
+ * @param {string} filename - 截图文件名
+ * @returns {string} 截图完整 URL
+ */
+export function getScreenshotUrl(projectName, filename) {
+  if (!filename) return ''
+  return `/api${BASE}/${encodeURIComponent(projectName)}/acceptance/screenshot/${encodeURIComponent(filename)}`
+}

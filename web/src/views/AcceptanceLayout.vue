@@ -20,14 +20,14 @@
         class="bg-white rounded-lg shadow-sm flex flex-col min-h-0 min-w-0 transition-all duration-300"
         :style="{ width: collapsed ? '100%' : '75%', flexShrink: collapsed ? '1' : '0' }"
       >
-        <RemoteAcceptancePanel :project-name="projectName" />
+        <RemoteAcceptancePanel ref="acceptancePanelRef" :project-name="projectName" />
       </div>
 
       <!-- 右侧：视频画面 + 通讯管理 -->
       <transition name="slide-fade">
         <div v-if="!collapsed" class="min-w-0 flex flex-col gap-4 min-h-0" style="flex: 1;">
           <VideoConnection />
-          <MessageComm />
+          <MessageComm @remote-signal="onRemoteSignal" />
         </div>
       </transition>
     </div>
@@ -46,6 +46,13 @@ const route = useRoute()
 const projectName = computed(() => route.params.name)
 
 const collapsed = ref(false)
+
+// ── 事件桥接：通讯管理 → 遥控验收面板 ──
+const acceptancePanelRef = ref(null)
+
+function onRemoteSignal(data) {
+  acceptancePanelRef.value?.handleRemoteSignal(data)
+}
 </script>
 
 <style scoped>

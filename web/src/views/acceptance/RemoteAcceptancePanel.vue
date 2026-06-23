@@ -22,7 +22,15 @@
       <template v-else>
         <div class="text-sm text-gray-500 mb-2 flex-shrink-0">验收表数据已加载，共 {{ savedData.length }} 条记录</div>
         <div ref="tableScrollRef" class="flex-1 min-h-0 overflow-x-auto" @scroll="onTableScroll">
-          <el-table :data="savedData" border stripe size="small" style="min-width: 100%" :max-height="tableMaxHeight">
+          <el-table
+            ref="tableRef"
+            :data="savedData"
+            border stripe size="small"
+            style="min-width: 100%"
+            :max-height="tableMaxHeight"
+            @selection-change="onSelectionChange"
+          >
+          <el-table-column type="selection" width="45" fixed="left" />
           <el-table-column label="序号" width="55" fixed="left" align="center">
             <template #default="{ $index }">
               <span class="text-yellow-600 font-medium">{{ $index + 1 }}</span>
@@ -33,7 +41,14 @@
           <el-table-column prop="old_backend_object" label="老后台遥控对象" min-width="140" show-overflow-tooltip />
           <el-table-column label="老后台遥控截图" min-width="140" align="center">
             <template #default="{ row }">
-              <span v-if="row.old_backend_screenshot" class="text-blue-500 text-xs cursor-pointer">📷 查看</span>
+              <el-image
+                v-if="row.old_backend_screenshot"
+                :src="getScreenshotUrl(projectName, row.old_backend_screenshot)"
+                :preview-src-list="[getScreenshotUrl(projectName, row.old_backend_screenshot)]"
+                fit="cover"
+                class="w-16 h-12 rounded cursor-pointer"
+                preview-teleported
+              />
               <span v-else class="text-gray-300 text-xs">-</span>
             </template>
           </el-table-column>
@@ -41,7 +56,14 @@
           <el-table-column prop="new_backend_object" label="新后台遥控对象" min-width="140" show-overflow-tooltip />
           <el-table-column label="新后台遥控截图" min-width="140" align="center">
             <template #default="{ row }">
-              <span v-if="row.new_backend_screenshot" class="text-blue-500 text-xs cursor-pointer">📷 查看</span>
+              <el-image
+                v-if="row.new_backend_screenshot"
+                :src="getScreenshotUrl(projectName, row.new_backend_screenshot)"
+                :preview-src-list="[getScreenshotUrl(projectName, row.new_backend_screenshot)]"
+                fit="cover"
+                class="w-16 h-12 rounded cursor-pointer"
+                preview-teleported
+              />
               <span v-else class="text-gray-300 text-xs">-</span>
             </template>
           </el-table-column>
@@ -80,8 +102,9 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Setting, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
-import { getAcceptance } from '@/api/acceptance'
+import { getAcceptance, recordRemoteAcceptance, getScreenshotUrl } from '@/api/acceptance'
 import ImportAcceptanceDialog from './ImportAcceptanceDialog.vue'
 
 const props = defineProps({
@@ -103,6 +126,14 @@ const dialogVisible = ref(false)
 const hasSavedData = ref(false)
 const savedFileName = ref('')
 const savedData = ref([])
+
+// ── 表格勾选 ──
+const tableRef = ref(null)
+const selectedRows = ref([])
+
+function onSelectionChange(selection) {
+  selectedRows.value = selection
+}
 
 // ── 表格滚动 ──
 const tableScrollRef = ref(null)
@@ -147,6 +178,40 @@ function onSaved({ rows, fileName }) {
   savedData.value = rows
   savedFileName.value = fileName
 }
+
+// ── 遥控信号处理（由父组件 AcceptanceLayout 调用）──
+async function handleRemoteSignal({ signal }) {
+  if (!hasSavedData.value) return
+
+  const bt = backendType.value
+  // 收集勾选行索引
+  let rowIndices = null
+  if (selectedRows.value.length > 0) {
+    rowIndices = selectedRows.value.map(r => savedData.value.indexOf(r)).filter(i => i >= 0)
+  }
+
+  try {
+    const res = await recordRemoteAcceptance(props.projectName, {
+      backend_type: bt,
+      signal,
+      row_indices: rowIndices,
+    })
+    if (res.rows) {
+      savedData.value = res.rows
+    }
+    if (res.filled_indices && res.filled_indices.length > 0) {
+      ElMessage.success(
+        `遥控验收已记录: ${bt === 'old' ? '老后台' : '新后台'} ` +
+        `→ 第${res.filled_indices.map(i => i + 1).join(',')}行`
+      )
+    }
+  } catch (e) {
+    const msg = e?.response?.data?.detail || e?.message || '遥控验收记录失败'
+    ElMessage.error(msg)
+  }
+}
+
+defineExpose({ handleRemoteSignal })
 
 // ── 加载已有数据 ──
 onMounted(async () => {
