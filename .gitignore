@@ -48,3 +48,5 @@ __screenshots__/
 
 # Vite
 *.timestamp-*-*.mjs
+# 工程文件夹
+projects/
