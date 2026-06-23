@@ -97,6 +97,12 @@
       :project-name="projectName"
       @saved="onSaved"
     />
+
+    <!-- 识别设置对话框 -->
+    <RecognitionSettingsDialog
+      v-model="settingsDialogVisible"
+      :project-name="projectName"
+    />
   </div>
 </template>
 
@@ -106,6 +112,7 @@ import { ElMessage } from 'element-plus'
 import { Setting, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { getAcceptance, recordRemoteAcceptance, getScreenshotUrl } from '@/api/acceptance'
 import ImportAcceptanceDialog from './ImportAcceptanceDialog.vue'
+import RecognitionSettingsDialog from './RecognitionSettingsDialog.vue'
 
 const props = defineProps({
   projectName: { type: String, required: true },
@@ -115,8 +122,10 @@ const props = defineProps({
 const backendType = ref('old')
 
 // ── 设置按钮 ──
+const settingsDialogVisible = ref(false)
+
 function onSettingsClick() {
-  // TODO: 预留设置功能
+  settingsDialogVisible.value = true
 }
 
 // ── 对话框 ──

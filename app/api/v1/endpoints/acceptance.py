@@ -16,8 +16,11 @@ from app.core.config import settings
 from app.models.acceptance import (
     AcceptanceData,
     AcceptanceRow,
+    LLMConfig,
+    LocalVisionConfig,
     PreviewRequest,
     PreviewResponse,
+    RecognitionConfig,
     RecordRemoteRequest,
     RecordRemoteResponse,
     SaveRequest,
@@ -116,7 +119,7 @@ def _cleanup_old_temp(project_path: Path):
 
 
 def _write_config_toml(project_path: Path, *, file_name: str | None = None):
-    """将文件名写入 config.toml（保留已有 created_time / description 字段）。"""
+    """将文件名写入 config.toml（保留已有 created_time / description 字段以及 recognition 节）。"""
     config_path = project_path / "config.toml"
     config = {}
     if config_path.is_file():
@@ -138,6 +141,94 @@ def _write_config_toml(project_path: Path, *, file_name: str | None = None):
     ]
     if fn:
         lines.append(f'file_name = "{fn}"')
+
+    # 保留已有 recognition 节
+    recognition = config.get("recognition", {})
+    if recognition:
+        lines.append("")
+        lines.extend(_format_recognition_toml(recognition))
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _format_recognition_toml(rec: dict) -> list[str]:
+    """将 recognition 字典格式化为 TOML 行列表。"""
+    lines = ["[recognition]"]
+    lines.append(f'method = "{rec.get("method", "llm")}"')
+    lines.append(f"region_enabled = {str(rec.get('region_enabled', False)).lower()}")
+    lines.append(f"region_x = {rec.get('region_x', 0.0)}")
+    lines.append(f"region_y = {rec.get('region_y', 0.0)}")
+    lines.append(f"region_width = {rec.get('region_width', 1.0)}")
+    lines.append(f"region_height = {rec.get('region_height', 1.0)}")
+
+    llm = rec.get("llm", {})
+    if isinstance(llm, dict):
+        lines.append("")
+        lines.append("[recognition.llm]")
+        lines.append(f'api_url = "{llm.get("api_url", "")}"')
+        lines.append(f'model_name = "{llm.get("model_name", "")}"')
+        lines.append(f'api_key = "{llm.get("api_key", "")}"')
+
+    lv = rec.get("local_vision", {})
+    if isinstance(lv, dict):
+        lines.append("")
+        lines.append("[recognition.local_vision]")
+        lines.append(f'model_path = "{lv.get("model_path", "")}"')
+        lines.append(f"confidence_threshold = {lv.get('confidence_threshold', 0.5)}")
+
+    return lines
+
+
+def _load_recognition_config(project_path: Path) -> RecognitionConfig:
+    """从 config.toml 加载识别配置，无配置时返回默认值。"""
+    config_path = project_path / "config.toml"
+    if not config_path.is_file():
+        return RecognitionConfig()
+    try:
+        with open(config_path, "rb") as f:
+            config = tomllib.load(f)
+        rec = config.get("recognition", {})
+        if not rec:
+            return RecognitionConfig()
+        return RecognitionConfig(
+            method=rec.get("method", "llm"),
+            region_enabled=rec.get("region_enabled", False),
+            region_x=rec.get("region_x", 0.0),
+            region_y=rec.get("region_y", 0.0),
+            region_width=rec.get("region_width", 1.0),
+            region_height=rec.get("region_height", 1.0),
+            llm=LLMConfig(**rec.get("llm", {})),
+            local_vision=LocalVisionConfig(**rec.get("local_vision", {})),
+        )
+    except Exception:
+        return RecognitionConfig()
+
+
+def _save_recognition_config(project_path: Path, body: RecognitionConfig):
+    """将识别配置保存到 config.toml（合并已有字段）。"""
+    config_path = project_path / "config.toml"
+    config = {}
+    if config_path.is_file():
+        try:
+            with open(config_path, "rb") as f:
+                config = tomllib.load(f)
+        except Exception:
+            pass
+
+    created_time = config.get("created_time", "")
+    description = config.get("description", "")
+    fn = config.get("file_name", "")
+
+    recognition_dict = body.model_dump()
+
+    lines = [
+        "# 工程配置文件",
+        f'created_time = "{created_time}"',
+        f'description = "{description}"',
+    ]
+    if fn:
+        lines.append(f'file_name = "{fn}"')
+    lines.append("")
+    lines.extend(_format_recognition_toml(recognition_dict))
     config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -487,3 +578,21 @@ async def get_screenshot(project_name: str, filename: str):
 
     content = resolved.read_bytes()
     return Response(content=content, media_type="image/jpeg")
+
+
+# ── 识别配置端点 ──────────────────────────────────────────
+
+@router.get("/{project_name}/recognition-config", response_model=RecognitionConfig)
+async def get_recognition_config(project_name: str):
+    """获取工程的识别配置（识别方式、区域、模型参数等）。"""
+    project_path = _get_project_path(project_name)
+    return _load_recognition_config(project_path)
+
+
+@router.put("/{project_name}/recognition-config", response_model=RecognitionConfig)
+async def save_recognition_config(project_name: str, body: RecognitionConfig):
+    """保存工程的识别配置到 config.toml。"""
+    project_path = _get_project_path(project_name)
+    _save_recognition_config(project_path, body)
+    logger.info("识别配置已保存: project=%s, method=%s", project_name, body.method)
+    return body

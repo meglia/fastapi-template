@@ -77,3 +77,30 @@ class AcceptanceData(BaseModel):
     exists: bool = False
     file_name: str | None = None
     items: list[AcceptanceRow] | None = None
+
+
+# ── 识别配置模型 ──────────────────────────────────────────
+
+class LLMConfig(BaseModel):
+    """大模型识别配置。"""
+    api_url: str = ""
+    model_name: str = ""
+    api_key: str = ""
+
+
+class LocalVisionConfig(BaseModel):
+    """本地视觉识别配置。"""
+    model_path: str = ""
+    confidence_threshold: float = 0.5
+
+
+class RecognitionConfig(BaseModel):
+    """识别配置 — 存储于工程 config.toml [recognition] 节。"""
+    method: str = "llm"
+    region_enabled: bool = False
+    region_x: float = 0.0
+    region_y: float = 0.0
+    region_width: float = 1.0
+    region_height: float = 1.0
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    local_vision: LocalVisionConfig = Field(default_factory=LocalVisionConfig)

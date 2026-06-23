@@ -69,3 +69,24 @@ export function getScreenshotUrl(projectName, filename) {
   if (!filename) return ''
   return `/api${BASE}/${encodeURIComponent(projectName)}/acceptance/screenshot/${encodeURIComponent(filename)}`
 }
+
+// ── 识别配置 ──
+
+/**
+ * 获取识别配置
+ * @param {string} projectName - 工程名称
+ * @returns {Promise<Object>} 识别配置对象
+ */
+export function getRecognitionConfig(projectName) {
+  return request.get(`${BASE}/${encodeURIComponent(projectName)}/recognition-config`)
+}
+
+/**
+ * 保存识别配置
+ * @param {string} projectName - 工程名称
+ * @param {Object} config - 识别配置对象
+ * @returns {Promise<Object>} 保存后的配置
+ */
+export function saveRecognitionConfig(projectName, config) {
+  return request.put(`${BASE}/${encodeURIComponent(projectName)}/recognition-config`, config)
+}
