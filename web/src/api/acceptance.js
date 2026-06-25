@@ -70,6 +70,20 @@ export function getScreenshotUrl(projectName, filename) {
   return `/api${BASE}/${encodeURIComponent(projectName)}/acceptance/screenshot/${encodeURIComponent(filename)}`
 }
 
+/**
+ * 清空验收表中指定行指定后台的遥控对象、截图、识别数据
+ * @param {string} projectName - 工程名称
+ * @param {'old'|'new'} backendType - 后台类型
+ * @param {number} rowIndex - 要清空的行索引（0-based）
+ * @returns {Promise<{ rows: Array, cleared_count: number }>}
+ */
+export function clearAcceptance(projectName, backendType, rowIndex) {
+  return request.post(`${BASE}/${encodeURIComponent(projectName)}/acceptance/clear`, {
+    backend_type: backendType,
+    row_index: rowIndex,
+  })
+}
+
 // ── 识别配置 ──
 
 /**

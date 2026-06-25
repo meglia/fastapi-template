@@ -94,6 +94,18 @@ class LocalVisionConfig(BaseModel):
     confidence_threshold: float = 0.5
 
 
+class ClearRequest(BaseModel):
+    """清空验收数据请求 — 按后台类型+行索引清空指定行的遥控对象、截图、识别三列。"""
+    backend_type: str = Field(..., description="old 或 new，指定清空老后台或新后台")
+    row_index: int = Field(..., description="要清空的行索引（0-based）")
+
+
+class ClearResponse(BaseModel):
+    """清空验收数据响应 — 返回更新后的完整行数据。"""
+    rows: list[AcceptanceRow]
+    cleared_count: int = Field(..., description="被清空的行数")
+
+
 class RecognitionConfig(BaseModel):
     """识别配置 — 存储于工程 config.toml [recognition] 节。"""
     method: str = "llm"

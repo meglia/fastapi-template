@@ -81,9 +81,19 @@
             </template>
           </el-table-column>
           <el-table-column label="操作" width="160" fixed="right" align="center">
-            <template #default>
+            <template #default="{ $index }">
               <el-button size="small" text type="primary" disabled>确认</el-button>
-              <el-button size="small" text type="primary" disabled>删除</el-button>
+              <el-dropdown trigger="click">
+                <el-button size="small" text type="primary">
+                  清空<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="onClearCommand($index, 'old')">清空老后台验收信息</el-dropdown-item>
+                    <el-dropdown-item @click="onClearCommand($index, 'new')">清空新后台验收信息</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
           </el-table>
@@ -108,9 +118,9 @@
 
 <script setup>
 import { ref, onMounted, nextTick, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Setting, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
-import { getAcceptance, recordRemoteAcceptance, getScreenshotUrl } from '@/api/acceptance'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Setting, ArrowLeft, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
+import { getAcceptance, recordRemoteAcceptance, getScreenshotUrl, clearAcceptance } from '@/api/acceptance'
 import ImportAcceptanceDialog from './ImportAcceptanceDialog.vue'
 import RecognitionSettingsDialog from './RecognitionSettingsDialog.vue'
 
@@ -186,6 +196,34 @@ function onSaved({ rows, fileName }) {
   hasSavedData.value = true
   savedData.value = rows
   savedFileName.value = fileName
+}
+
+// ── 清空验收数据（仅清空当前行）──
+async function onClearCommand(rowIndex, backendType) {
+  if (!hasSavedData.value) return
+
+  const label = backendType === 'old' ? '老后台' : '新后台'
+  const rowNum = rowIndex + 1
+  try {
+    await ElMessageBox.confirm(
+      `确定要清空第${rowNum}行的${label}验收信息吗？此操作将清空该行${label}的遥控对象、遥控截图、遥控识别数据，不可恢复。`,
+      '确认清空',
+      { confirmButtonText: '确认清空', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  try {
+    const res = await clearAcceptance(props.projectName, backendType, rowIndex)
+    if (res.rows) {
+      savedData.value = res.rows
+    }
+    ElMessage.success(`第${rowNum}行${label}验收信息已清空`)
+  } catch (e) {
+    const msg = e?.response?.data?.detail || e?.message || '清空失败'
+    ElMessage.error(msg)
+  }
 }
 
 // ── 遥控信号处理（由父组件 AcceptanceLayout 调用）──

@@ -16,6 +16,8 @@ from app.core.config import settings
 from app.models.acceptance import (
     AcceptanceData,
     AcceptanceRow,
+    ClearRequest,
+    ClearResponse,
     LLMConfig,
     LocalVisionConfig,
     PreviewRequest,
@@ -578,6 +580,58 @@ async def get_screenshot(project_name: str, filename: str):
 
     content = resolved.read_bytes()
     return Response(content=content, media_type="image/jpeg")
+
+
+# ── 清空验收数据 ──────────────────────────────────────────
+
+@router.post("/{project_name}/acceptance/clear", response_model=ClearResponse)
+async def clear_acceptance(project_name: str, body: ClearRequest):
+    """按后台类型+行索引清空指定行中遥控对象、遥控截图、遥控识别三列数据。
+
+    backend_type='old' 清空老后台三列，='new' 清空新后台三列。
+    row_index 指定要清空的行（0-based）。
+    """
+    project_path = _get_project_path(project_name)
+
+    if body.backend_type not in ("old", "new"):
+        raise HTTPException(status_code=400, detail="backend_type 必须为 old 或 new")
+
+    data_path = project_path / DATA_FILE_NAME
+    if not data_path.is_file():
+        raise HTTPException(status_code=400, detail="请先导入并保存验收表")
+
+    try:
+        items_raw = json.loads(data_path.read_text(encoding="utf-8"))
+        rows = [AcceptanceRow(**item) for item in items_raw]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取验收数据失败: {e}")
+
+    if body.row_index < 0 or body.row_index >= len(rows):
+        raise HTTPException(status_code=400, detail=f"行索引 {body.row_index} 超出范围（共 {len(rows)} 行）")
+
+    is_old = body.backend_type == "old"
+    target = rows[body.row_index]
+
+    if is_old:
+        target.old_backend_object = ""
+        target.old_backend_screenshot = ""
+        target.old_backend_recognition = ""
+    else:
+        target.new_backend_object = ""
+        target.new_backend_screenshot = ""
+        target.new_backend_recognition = ""
+
+    # 写回 JSON
+    data_json = [r.model_dump() for r in rows]
+    data_path.write_text(json.dumps(data_json, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    backend_label = "老后台" if is_old else "新后台"
+    logger.info(
+        "[清空验收] 工程=%s 后台=%s 行索引=%d",
+        project_name, backend_label, body.row_index,
+    )
+
+    return ClearResponse(rows=rows, cleared_count=1)
 
 
 # ── 识别配置端点 ──────────────────────────────────────────
